@@ -1,0 +1,10 @@
+{
+  "id": "liepin",
+  "name": "猎聘",
+  "version": "1.0.1",
+  "description": "猎聘",
+  "author": "Ryan lau",
+  "config": {
+    "serviceURL": "https://liepin.com/"
+  }
+}

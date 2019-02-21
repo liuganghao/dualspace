@@ -1,0 +1,10 @@
+{
+  "id": "maimai",
+  "name": "脉脉",
+  "version": "1.0.1",
+  "description": "脉脉",
+  "author": "Ryan lau",
+  "config": {
+    "serviceURL": "https://maimai.cn/im/"
+  }
+}

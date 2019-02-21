@@ -1,0 +1,10 @@
+{
+  "id": "bosszhipin",
+  "name": "Boss直聘",
+  "version": "1.0.1",
+  "description": "Boss直聘",
+  "author": "Ryan lau",
+  "config": {
+    "serviceURL": "https://www.zhipin.com/geek/new/index/chat?ka=header-message"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "id": "wechat",
+  "name": "WeChat",
+  "version": "2.0.0",
+  "description": "Instant messaging",
+  "author": "liugh",
+  "featured": true,
+  "config": {
+    "hasNotificationSound": true,
+    "hasIndirectMessages": true,
+    "serviceURL": "https://wx2.qq.com/"
+  }
+}

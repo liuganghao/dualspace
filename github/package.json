@@ -1,0 +1,10 @@
+{
+  "id": "github",
+  "name": "GitHub",
+  "version": "1.0.1",
+  "description": "GitHub",
+  "author": "Sudhir Ganesan",
+  "config": {
+    "serviceURL": "https://github.com/"
+  }
+}

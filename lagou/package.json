@@ -1,0 +1,10 @@
+{
+  "id": "lagou",
+  "name": "拉钩",
+  "version": "1.0.1",
+  "description": "拉钩",
+  "author": "Ryan lau",
+  "config": {
+    "serviceURL": "https://lagou.com/"
+  }
+}
