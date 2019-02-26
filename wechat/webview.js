@@ -1,13 +1,18 @@
 'use strict';
 
-const path = require('path');
-
 module.exports = (dualspace, options) => {
   const angular = window.angular = {};
   let angularBootstrapReal;
+  const remote = require('electron').remote
+  const axios = remote.require('axios');
+  const fs = remote.require('fs-Extra')
+  const path = remote.require('path');
+  const mime = remote.require('mime/lite');
+  const userPath = remote.app.getPath('userData')
+  const nedb = remote.require('nedb')
+  const dayjs = remote.require('dayjs')
+  const { default: efetch } = remote.require('electron-fetch')
   window.addEventListener("load", function (event) {
-
-    let axios = require('electron').remote.require('axios');
     let download_entry = document.querySelector('body > div.main > div > div.panel.give_me > div.download_entry.ng-scope > a')
     if (download_entry) download_entry.click();
     (function init() {
@@ -44,7 +49,7 @@ module.exports = (dualspace, options) => {
 
         // funcs
         log: function log(text) {
-          window.BOT.emit('log', text)
+          console.log('BOT:', text)
         },
         /**
          *
@@ -206,8 +211,6 @@ module.exports = (dualspace, options) => {
         },
 
         login: function login(data) {
-          console.log(data)
-
           window.BOT.log('login(' + data + ')')
           window.BOT.loginState(true)
           window.BOT.emit('login', data)
@@ -229,44 +232,399 @@ module.exports = (dualspace, options) => {
         },
 
         ding: function ding(data) {
-          window.BOT.log('recv ding')
+          //window.BOT.log('recv ding')
           return data || 'dong'
         },
-        ask: function ask(info, options = {}, answer = this.answer) {
+        ask_tuling123: function ask_tuling123(info, options = {}, answer = this.answer) {
           options.key = '5acbb7225a154ad38843a54f9cfdb8e5'
           options.info = info;
           return axios.get('http://www.tuling123.com/openapi/api', {
             params: options
           })
         },
+        getDescName: (userid) => {
+          let obj = BOT.getContact(userid);
+          let rt = obj.RemarkName || obj.NickName
+          if (!rt && rt.MemberList && rt.MemberList.length > 0) {
+            for (const m of rt.MemberList) {
+              rt += m.RemarkName || m.NickName
+              rt += " "
+            }
+          }
+          return rt
+        },
+        helper: {
+          xmlStr2Obj: function () {
+            let xml = this.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+            return new Promise(function (resolve, reject) {
+              xml2js.parseString(xml, (err, r) => {
+                if (err) reject(err);
+                else resolve(r);
+              })
+            })
+          },
+          parseKV: (text) => {
+            var string = text.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+            var matchs = string.match(/(\w+)="([^\s]+)"/g);
+            let res = {};
+
+            matchs.map(e => {
+              var kv = e.replace(/"/g, '').split('=');
+
+              res[kv[0]] = kv[1];
+            });
+
+            return res;
+          },
+        },
+        resolveMessage: async function resolveMessage(m) {
+          let c = window.BOT.glue.confFactory
+          let rt = {
+            from: BOT.getDescName(m.FromUserName),
+            to: BOT.getDescName(m.ToUserName),
+            //current: BOT.getDescName(window.BOT.getUserName()),
+            exid: m.MsgId,
+            state: m.ToUserName == window.BOT.getUserName() ? 'ask' : 'anwser',
+            createdon: m.CreateTime * 1000,
+            //content: m.obj.digest,
+            //exdata: m,
+          }
+          if (m.MMIsChatRoom) {
+            if (m.MMIsSend) {
+              rt.room = rt.to
+              rt.to = '';//todo @
+            } else {
+              rt.room = rt.from
+              rt.from = BOT.getDescName(m.MMActualSender)
+            }
+          }
+          let filepath = path.join(userPath, dayjs().format('MMDD'), BOT.getDescName(window.BOT.getUserName()), rt.room ? (rt.room + '_' + rt.from + '_' + m.MsgId) : (rt.from + '_' + m.MsgId));
+          fs.ensureDirSync(path.join(userPath, dayjs().format('MMDD'), BOT.getDescName(window.BOT.getUserName())))
+          switch (m.MsgType) {
+            case c.MSGTYPE_TEXT:
+              // Text message and Location SubMsgType == 48
+              if (m.Url && m.OriContent) {
+                rt.type = 'location';
+                // This m is a location
+                let parts = m.Content.split(':<br/>');
+                let location = helper.parseKV(m.OriContent);
+
+                //location.image = `https://${session.host}/${parts[1]}`.replace(/\/+/g, '/');
+                location.href = m.Url;
+
+                rt.content = ''
+                rt.content += rt.from + ' 发送了一个 位置消息 - 我在 ' + location.poiname
+                rt.content += '\n======================='
+                rt.content += '\n= 标题:' + location.poiname
+                rt.content += '\n= 描述:' + location.label
+                rt.content += '\n= 链接:' + location.href
+                rt.content += '\n= 坐标(x,y):' + location.x + ' , ' + location.y
+                //rt.content += '\n= 图片:' + location.image
+                rt.content += '\n======================='
+                rt.obj = {
+                  poiname: location.poiname,
+                  label: location.label,
+                  href: location.href,
+                  x: location.x,
+                  y: location.y,
+                  // image: location.image
+                }
+
+              } else {
+                var content = m.MMActualContent //emoji.normalize(message.Content);
+                console.log(rt.from + ' ：' + content)
+                rt.type = 'text';
+                rt.content = content;
+              }
+              break;
+            case 3:
+              rt.type = 'image';
+              //console.log(rt.from + '发送了一张图片：' + m.Content)
+              // Image
+              // let image = helper.parseKV(message.Content);
+              //message.image = image;
+              fetch(c.API_webwxgetmsgimg + '?&MsgID=' + m.MsgId, {
+                method: 'GET',
+                credentials: 'same-origin'
+              }).then(res => res.arrayBuffer())
+                .then(filecontent => fs.writeFileSync(filepath + '.jpg', new Buffer(filecontent)))
+                .catch(error => console.error(error))
+              rt.obj = { filepath: filepath + '.jpg' };
+              rt.content = '[图片]'
+              console.log(rt.from + ' 发送了一张图片:' + rt.obj.filepath);
+              break;
+            case 34:
+              rt.type = 'voice';
+              rt.obj = { filepath: filepath + '.mp3' };
+              rt.content = '[语音]'
+              console.log(rt.from + ' 发送了一段语音:' + rt.obj.filepath);
+              fetch(c.API_webwxgetvoice + '?&MsgID=' + m.MsgId, {
+                method: 'GET',
+                credentials: 'same-origin'
+              }).then(res => res.arrayBuffer())
+                .then(filecontent => fs.writeFileSync(filepath + '.mp3', new Buffer(filecontent)))
+                .catch(error => { throw error })
+              break;
+            case 42:
+              rt.type = 'contact';
+              // Contact
+              let contact = message.RecommendInfo;
+
+              contact.image = filepath + '.jpg';
+              contact.name = contact.NickName;
+              contact.address = `${contact.Province || 'UNKNOW'}, ${contact.City || 'UNKNOW'}`;
+              rt.content = ''
+              rt.content += rt.from + ' 发送了一张名片:'
+              rt.content += '======================='
+              rt.content += '= 昵称:' + contact.NickName
+              rt.content += '= 微信号:' + contact.Alias
+              rt.content += '= 地区:' + contact.Province + ' - ' + contact.City
+              rt.content += '= 性别:' + ['未知', '男', '女'][contact.Sex]
+              rt.content += '======================='
+              rt.obj = {
+                NickName: contact.NickName,
+                Alias: contact.Alias,
+                City: contact.City,
+                Province: contact.Province,
+                Sex: contact.Sex,
+              }
+              fetch(c.API_webwxgeticon + '?&MsgID=' + m.MsgId, {
+                method: 'GET',
+                credentials: 'same-origin'
+              }).then(res => res.arrayBuffer())
+                .then(filecontent => fs.writeFileSync(filepath + '.jpg', new Buffer(filecontent)))
+                .catch(error => console.error(error))
+              break;
+            case 62:
+            case 43:
+              rt.type = 'video';
+              rt.content = '[视频]'
+              rt.obj = { filepath: filepath + '.mp4' };
+              console.log(rt.from + ' 发送了一段视频:' + video.obj.filepath);
+              fetch(c.API_webwxgetvideo + '?&MsgID=' + m.MsgId, {
+                method: 'GET',
+                credentials: 'same-origin'
+              }).then(res => res.arrayBuffer())
+                .then(filecontent => fs.writeFileSync(filepath + '.mp4', new Buffer(filecontent)))
+                .catch(error => console.error(error))
+              break;
+            case 47:
+              rt.type = 'emoji';
+              // External emoji
+              fetch(c.API_webwxgetmsgimg + '?&MsgID=' + m.MsgId, {
+                method: 'GET',
+                credentials: 'same-origin'
+              }).then(res => res.arrayBuffer())
+                .then(filecontent => fs.writeFileSync(filepath + '.gif', new Buffer(filecontent)))
+                .catch(error => console.error(error))
+              rt.obj = { filepath: filepath + '.gif' };
+              rt.content = '[表情]'
+              console.log(rt.from + ' 发送了一个动画表情:' + rt.obj.filepath);
+              break;
+            case 48:
+              console.log(rt.from + ' LOCATION:' + JSON.stringify(m));
+              break;
+            case 49:
+              rt.type = 'transfer';
+              switch (m.AppMsgType) {
+                case 2000: // Transfer
+                  let result = await BOT.helper.xmlStr2Obj(m.Content)
+                  m.MsgType += 2000;
+                  m.transfer = {
+                    title: result.msg.appmsg[0].title[0],
+                    money: result.msg.appmsg[0].wcpayinfo[0].feedesc[0],
+                  };
+                  if (result.msg.appmsg[0].wcpayinfo[0].pay_memo && result.msg.appmsg[0].wcpayinfo[0].pay_memo.length > 0) {
+                    m.transfer.memo = result.msg.appmsg[0].wcpayinfo[0].pay_memo[0]
+                  }
+                  console.log(rt.from + ' 转账给您:' + m.transfer.money + ' 备注：' + m.transfer.memo);
+                  rt.content = m.transfer;
+                  break;
+                case 2001:
+                  rt.type = 'redpackage';
+                  rt.content = JSON.stringify(m)
+                  console.log(rt.from + ' 发了个红包给您:' + JSON.stringify(m));
+                  break;
+                case 17:
+                  rt.type = 'locationsharing';
+                  // Location sharing...
+                  //m.MsgType += 17;
+                  rt.content = JSON.stringify(m)
+                  console.log(rt.from + ' 分享实时位置: ');
+                  break;
+                case 16:
+                  rt.type = 'cardticket';
+                  rt.content = JSON.stringify(m)
+                  console.log(rt.from + ' CARD_TICKET:' + JSON.stringify(m));
+                  break;
+                case 15:
+                  rt.type = 'emtion';
+                  rt.content = JSON.stringify(m)
+                  console.log(rt.from + ' EMOTION:' + JSON.stringify(message));
+                  break;
+                case 13:
+                  rt.type = 'good';
+                  rt.content = JSON.stringify(m)
+                  console.log(rt.from + ' GOOD:' + JSON.stringify(message));
+                  break;
+                case 10:
+                  rt.type = 'scangood';
+                  rt.content = JSON.stringify(m)
+                  console.log(rt.from + ' SCAN_GOOD:' + JSON.stringify(message));
+                  break;
+                case 9:
+                  rt.content = JSON.stringify(m)
+                  console.log(rt.from + ' GOOD:' + JSON.stringify(message));
+                  break;
+                case 8:
+                  rt.type = 'animatedemoji'
+                  fetch(c.API_webwxgetmsgimg + '?&MsgID=' + m.MsgId, {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                  }).then(res => res.arrayBuffer())
+                    .then(filecontent => fs.writeFileSync(filepath + '.gif', new Buffer(filecontent)))
+                    .catch(error => console.error(error))
+                  rt.obj = { filepath: filepath + '.gif' };
+                  rt.content = '[动画]'
+                  break;
+                case 6:
+                  rt.type = 'file'
+                  // Receive file
+                  let file = {
+                    name: m.FileName,
+                    size: m.FileSize,
+                    mediaId: m.MediaId,
+                    extension: (m.FileName.match(/\.\w+$/) || [])[0],
+                  };
+                  efetch(m.MMAppMsgDownloadUrl)
+                    .then(res => res.buffer())
+                    .then(filecontent => fs.writeFileSync(filepath + '_' + file.name, new Buffer(filecontent)))
+                    .catch(error => console.error(error))
+                  rt.obj = {
+                    name: file.name,
+                    size: file.size,
+                    path: filepath + '_' + file.name,
+                    extension: file.extension,
+                  }
+                  rt.content = '[文件]:' + file.name;
+                  break;
+                case 5:
+                  console.log(rt.from + ' URL:' + JSON.stringify(message));
+                  break;
+                case 4:
+                  console.log(rt.from + ' VIDEO:' + JSON.stringify(message));
+                  break;
+                case 3:
+                  console.log(rt.from + ' AUDIO:' + JSON.stringify(message));
+                  break;
+                case 2:
+                  console.log(rt.from + ' IMG:' + JSON.stringify(message));
+                  break;
+                case 1:
+                  console.log(rt.from + ' TEXT:' + JSON.stringify(message));
+                  break;
+                default:
+                  rt.type = 'unknow';
+                  rt.content = JSON.stringify(message)
+                  console.error('Unknow app message: %o', Object.assign({}, message));
+                  message.Content = `收到一条暂不支持的消息类型，请在手机上查看（${message.FileName || 'No Title'}）。`;
+                  message.MsgType = 19999;
+                  break;
+              }
+              break;
+            case 50:
+              console.log(rt.from + ' VOIPMSG:' + JSON.stringify(message));
+              break;
+            case 51:
+              console.log(rt.from + ' STATUSNOTIFY:' + JSON.stringify(message));
+              break;
+            case 52:
+              console.log(rt.from + ' VOIPNOTIFY:' + JSON.stringify(message));
+              break;
+            case 53:
+              console.log(rt.from + ' VOIPINVITE:' + JSON.stringify(message));
+              break;
+            case 10002:
+              let text = isChatRoom ? message.Content.split(':<br/>').slice(-1).pop() : message.Content;
+              let {
+                value
+              } = helper.parseXml(text, ['replacemsg', 'msgid']);
+
+              if (!settings.blockRecall) {
+                self.deleteMessage(message.FromUserName, value.msgid);
+              }
+              message.Content = value.replacemsg;
+              message.MsgType = 19999;
+              break;
+            case 10000:
+              console.log(message.Content);
+              // let userid = message.FromUserName;
+
+              // // Refresh the current chat room info
+              // if (helper.isChatRoom(userid)) {
+              //     let user = await contacts.getUser(userid);
+
+              //     if (userid === self.user.UserName) {
+              //         self.chatTo(user);
+              //     }
+
+              //     if (members.show
+              //         && members.user.UserName === userid) {
+              //         members.toggle(true, user);
+              //     }
+              // }
+              break;
+
+            default:
+              rt.type = 'unknow';
+              rt.content = JSON.stringify(message)
+              // Unhandle message
+              message.Content = 'Unknow message type: ' + message.MsgType;
+              message.MsgType = 19999;
+          }
+
+          return rt;
+        },
         hookEvents: function hookEvents() {
-          var shell = require('electron').shell
           var rootScope = window.BOT.glue.rootScope
           var appScope = window.BOT.glue.appScope
           if (!rootScope || !appScope) {
             window.BOT.log('hookEvents() no rootScope')
             return false
           }
-          rootScope.$on('message:add:success', function (event, data) {
+          rootScope.$on('message:add:success', async function (event, m) {
             if (!window.BOT.loginState()) { // in case of we missed the pageInit event
               window.BOT.login('by event[message:add:success]')
             }
-            console.log(data)
 
-            if (data.ToUserName == window.BOT.getUserName() //我接收的消息
-              && !data.FromUserName.startsWith('@@')//不是群消息
-              && data.MsgType == 1
-            ) {
-              window.BOT.ask(data.MMActualContent, { userid: data.ToUserName }).then(function (r) {
-                // console.log(r.data)
-                // console.log('bot', 'Talker reply:"%s" for "%s" ',
-                //     r.data.text,
-                //     data.MMActualContent
-                // )
-                window.BOT.send(data.FromUserName, r.data.text)
-              })
-
+            let message = await window.BOT.resolveMessage(m)
+            try {
+              let dbfile = path.join(userPath, 'message.db')
+              var db = new nedb({ filename: dbfile, autoload: true });
+              db.insert(message, function (err, saveddata) {
+                console.log(saveddata)
+                // Callback is optional
+                // newDoc is the newly inserted document, including its _id
+                // newDoc has no key called notToBeSaved since its value was undefined
+              });
+            } catch (error) {
+              console.error(error)
             }
+            ipcRenderer.send('message_new', message)
+            // if (data.ToUserName == window.BOT.getUserName() //我接收的消息
+            //   && !data.FromUserName.startsWith('@@')//不是群消息
+            //   && data.MsgType == 1
+            // ) {
+            //   window.BOT.ask_tuling123(data.MMActualContent, { userid: data.ToUserName }).then(function (r) {
+            //     // console.log(r.data)
+            //     // console.log('bot', 'Talker reply:"%s" for "%s" ',
+            //     //     r.data.text,
+            //     //     data.MMActualContent
+            //     // )
+            //     window.BOT.send(data.FromUserName, r.data.text)
+            //   })
+
+            // }
           })
           rootScope.$on('root:pageInit:success'), function (event, data) {
             window.BOT.login('by event[root:pageInit:success]')
@@ -777,7 +1135,6 @@ module.exports = (dualspace, options) => {
       console.log(retObj.message)
       return retObj
     }());
-
   })
   Object.defineProperty(angular, 'bootstrap', {
     get: () => angularBootstrapReal ? function (element, moduleNames) {
@@ -823,14 +1180,14 @@ module.exports = (dualspace, options) => {
       let transformResponse = function transformResponse(value, constants) {
         if (!value) return value;
 
-        switch (typeof value) {
-          case 'object':
-            /* Inject emoji stickers and prevent recalling. */
-            return checkEmojiContent(value, constants);
-          case 'string':
-            /* Inject share sites to menu. */
-            return checkTemplateContent(value);
-        }
+        // switch (typeof value) {
+        //   case 'object':
+        //     /* Inject emoji stickers and prevent recalling. */
+        //     return checkEmojiContent(value, constants);
+        //   case 'string':
+        //     /* Inject share sites to menu. */
+        //     return checkTemplateContent(value);
+        // }
         return value;
       }
       const moduleName = 'webwxApp';
@@ -846,7 +1203,6 @@ module.exports = (dualspace, options) => {
         console.log('wx-user-logged')
         //if (MMCgi.isLogin)
         // setTimeout(() => {
-
         $rootScope.$on('newLoginPage', () => {
 
         });
@@ -861,7 +1217,6 @@ module.exports = (dualspace, options) => {
   dualspace.injectCSS(path.join(__dirname, 'service.css'));
 
   dualspace.loop(() => {
-    console.log('wechat:getMessage')
     let directCount = 0;
     let indirectCount = 0;
     let chat_item = document.querySelectorAll('div.chat_item');

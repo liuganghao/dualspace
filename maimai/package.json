@@ -5,6 +5,6 @@
   "description": "脉脉",
   "author": "Ryan lau",
   "config": {
-    "serviceURL": "https://maimai.cn/im/"
+    "serviceURL": "https://acc.maimai.cn/login?to=https%3A%2F%2Fmaimai.cn%2Fim%2F"
   }
 }

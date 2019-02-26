@@ -2,6 +2,11 @@
 // just pass through dualspace
 
 module.exports = dualspace => {
-    console.log(dualspace)
+    //debugger
+    //console.log(dualspace)
+    // let { ipcMain } = require('electron').remote;
+    // ipcMain.on('serviceConsumer', (event, args) => {
+    //     console.log('ipcMain serviceConsumer ', args)
+    // })
     return dualspace;
 }
