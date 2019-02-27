@@ -5,7 +5,7 @@ module.exports = (dualspace, options) => {
   let angularBootstrapReal;
   const remote = require('electron').remote
   const axios = remote.require('axios');
-  const fs = remote.require('fs-Extra')
+  const fs = remote.require('fs-extra')
   const path = remote.require('path');
   const userPath = remote.app.getPath('userData')
   const nedb = remote.require('nedb')
