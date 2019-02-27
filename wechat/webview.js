@@ -7,7 +7,6 @@ module.exports = (dualspace, options) => {
   const axios = remote.require('axios');
   const fs = remote.require('fs-Extra')
   const path = remote.require('path');
-  const mime = remote.require('mime/lite');
   const userPath = remote.app.getPath('userData')
   const nedb = remote.require('nedb')
   const dayjs = remote.require('dayjs')
@@ -598,6 +597,7 @@ module.exports = (dualspace, options) => {
             }
 
             let message = await window.BOT.resolveMessage(m)
+            message.app = 'wechat'
             try {
               let dbfile = path.join(userPath, 'message.db')
               var db = new nedb({ filename: dbfile, autoload: true });
@@ -1238,6 +1238,4 @@ module.exports = (dualspace, options) => {
 
     dualspace.setBadge(directCount, indirectCount);
   });
-
-
 };
